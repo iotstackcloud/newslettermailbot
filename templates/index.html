@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iCloud Newsletter Abmelde-Bot</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>iCloud Newsletter Abmelde-Bot</h1>
+        </header>
+
+        <!-- Einstellungen -->
+        <section class="card" id="settings-section">
+            <h2>Einstellungen</h2>
+            <form id="settings-form">
+                <div class="form-group">
+                    <label for="email">E-Mail-Adresse:</label>
+                    <input type="email" id="email" name="email" value="{{ config.email }}" placeholder="deine@icloud.com">
+                </div>
+                <div class="form-group">
+                    <label for="password">App-Passwort:</label>
+                    <input type="password" id="password" name="password" value="{{ config.password }}" placeholder="App-spezifisches Passwort">
+                    <small>
+                        <a href="https://appleid.apple.com" target="_blank">App-Passwort erstellen</a>
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="imap_server">IMAP Server:</label>
+                    <input type="text" id="imap_server" name="imap_server" value="{{ config.imap_server or 'imap.mail.me.com' }}">
+                </div>
+                <div class="form-group">
+                    <label for="imap_port">IMAP Port:</label>
+                    <input type="number" id="imap_port" name="imap_port" value="{{ config.imap_port or 993 }}">
+                </div>
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary">Speichern</button>
+                    <button type="button" class="btn btn-secondary" id="test-connection">Verbindung testen</button>
+                </div>
+            </form>
+            <div id="settings-message" class="message hidden"></div>
+        </section>
+
+        <!-- Newsletter Scanner -->
+        <section class="card" id="scanner-section">
+            <h2>Newsletter Scanner</h2>
+            <div class="button-group">
+                <button class="btn btn-primary" id="start-scan">Newsletter suchen</button>
+            </div>
+            <div id="scan-progress" class="progress-container hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="scan-progress-fill"></div>
+                </div>
+                <p id="scan-message">Scanne...</p>
+            </div>
+        </section>
+
+        <!-- Newsletter Liste -->
+        <section class="card hidden" id="newsletters-section">
+            <h2>Gefundene Newsletter</h2>
+            <div class="filter-bar">
+                <label>
+                    <input type="checkbox" id="filter-new" checked> Nur neue
+                </label>
+                <label>
+                    <input type="checkbox" id="filter-processed"> Verarbeitet anzeigen
+                </label>
+            </div>
+            <div class="table-controls">
+                <button class="btn btn-small" id="select-all">Alle auswaehlen</button>
+                <button class="btn btn-small" id="select-none">Keine auswaehlen</button>
+                <span id="selected-count">0 ausgewaehlt</span>
+            </div>
+            <div class="table-container">
+                <table id="newsletters-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="checkbox-all"></th>
+                            <th>Absender</th>
+                            <th>Betreff</th>
+                            <th>Datum</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="newsletters-body">
+                    </tbody>
+                </table>
+            </div>
+            <div class="button-group">
+                <button class="btn btn-danger" id="unsubscribe-selected" disabled>Ausgewaehlte abmelden</button>
+            </div>
+        </section>
+
+        <!-- Abmelde-Fortschritt -->
+        <section class="card hidden" id="unsubscribe-section">
+            <h2>Abmeldung</h2>
+            <div id="unsubscribe-progress" class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="unsubscribe-progress-fill"></div>
+                </div>
+                <p id="unsubscribe-message">Bereite Abmeldung vor...</p>
+            </div>
+            <div id="unsubscribe-results" class="results-list">
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // DOM Elemente
+        const settingsForm = document.getElementById('settings-form');
+        const testConnectionBtn = document.getElementById('test-connection');
+        const settingsMessage = document.getElementById('settings-message');
+        const startScanBtn = document.getElementById('start-scan');
+        const scanProgress = document.getElementById('scan-progress');
+        const scanProgressFill = document.getElementById('scan-progress-fill');
+        const scanMessage = document.getElementById('scan-message');
+        const newslettersSection = document.getElementById('newsletters-section');
+        const newslettersBody = document.getElementById('newsletters-body');
+        const selectAllBtn = document.getElementById('select-all');
+        const selectNoneBtn = document.getElementById('select-none');
+        const checkboxAll = document.getElementById('checkbox-all');
+        const selectedCount = document.getElementById('selected-count');
+        const unsubscribeBtn = document.getElementById('unsubscribe-selected');
+        const unsubscribeSection = document.getElementById('unsubscribe-section');
+        const unsubscribeProgressFill = document.getElementById('unsubscribe-progress-fill');
+        const unsubscribeMessage = document.getElementById('unsubscribe-message');
+        const unsubscribeResults = document.getElementById('unsubscribe-results');
+        const filterNew = document.getElementById('filter-new');
+        const filterProcessed = document.getElementById('filter-processed');
+
+        let newsletters = [];
+
+        // Einstellungen speichern
+        settingsForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(settingsForm);
+            const data = Object.fromEntries(formData);
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                showMessage(settingsMessage, result.message, result.success ? 'success' : 'error');
+            } catch (error) {
+                showMessage(settingsMessage, 'Fehler beim Speichern', 'error');
+            }
+        });
+
+        // Verbindung testen
+        testConnectionBtn.addEventListener('click', async () => {
+            testConnectionBtn.disabled = true;
+            testConnectionBtn.textContent = 'Teste...';
+
+            // Erst speichern
+            const formData = new FormData(settingsForm);
+            const data = Object.fromEntries(formData);
+            await fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            try {
+                const response = await fetch('/api/test-connection', { method: 'POST' });
+                const result = await response.json();
+                showMessage(settingsMessage, result.message, result.success ? 'success' : 'error');
+            } catch (error) {
+                showMessage(settingsMessage, 'Verbindungsfehler', 'error');
+            } finally {
+                testConnectionBtn.disabled = false;
+                testConnectionBtn.textContent = 'Verbindung testen';
+            }
+        });
+
+        // Scan starten
+        startScanBtn.addEventListener('click', async () => {
+            startScanBtn.disabled = true;
+            scanProgress.classList.remove('hidden');
+            newslettersSection.classList.add('hidden');
+
+            try {
+                await fetch('/api/scan', { method: 'POST' });
+                pollScanStatus();
+            } catch (error) {
+                scanMessage.textContent = 'Fehler beim Starten';
+                startScanBtn.disabled = false;
+            }
+        });
+
+        // Scan-Status abfragen
+        async function pollScanStatus() {
+            try {
+                const response = await fetch('/api/scan/status');
+                const status = await response.json();
+
+                scanProgressFill.style.width = status.progress + '%';
+                scanMessage.textContent = status.message;
+
+                if (status.scanning) {
+                    setTimeout(pollScanStatus, 500);
+                } else {
+                    startScanBtn.disabled = false;
+                    if (status.newsletters.length > 0) {
+                        newsletters = status.newsletters;
+                        renderNewsletters();
+                        newslettersSection.classList.remove('hidden');
+                    }
+                }
+            } catch (error) {
+                startScanBtn.disabled = false;
+            }
+        }
+
+        // Newsletter rendern
+        function renderNewsletters() {
+            const showNew = filterNew.checked;
+            const showProcessed = filterProcessed.checked;
+
+            newslettersBody.innerHTML = '';
+
+            let filteredNewsletters = newsletters.filter(nl => {
+                if (showNew && !showProcessed && nl.processed) return false;
+                if (!showNew && showProcessed && !nl.processed) return false;
+                return true;
+            });
+
+            filteredNewsletters.forEach(nl => {
+                const tr = document.createElement('tr');
+                tr.className = nl.unsubscribed ? 'unsubscribed' : (nl.processed ? 'processed' : '');
+
+                const statusText = nl.unsubscribed ? 'Abgemeldet' : (nl.processed ? 'Verarbeitet' : 'Neu');
+                const statusClass = nl.unsubscribed ? 'status-success' : (nl.processed ? 'status-processed' : 'status-new');
+
+                tr.innerHTML = `
+                    <td><input type="checkbox" class="newsletter-checkbox" data-id="${nl.id}" ${nl.unsubscribed ? 'disabled' : ''}></td>
+                    <td title="${nl.from}">${truncate(nl.from, 30)}</td>
+                    <td title="${nl.subject}">${truncate(nl.subject, 40)}</td>
+                    <td>${formatDate(nl.date)}</td>
+                    <td><span class="status ${statusClass}">${statusText}</span></td>
+                `;
+                newslettersBody.appendChild(tr);
+            });
+
+            updateSelectedCount();
+        }
+
+        // Filter Events
+        filterNew.addEventListener('change', renderNewsletters);
+        filterProcessed.addEventListener('change', renderNewsletters);
+
+        // Alle auswaehlen
+        selectAllBtn.addEventListener('click', () => {
+            document.querySelectorAll('.newsletter-checkbox:not(:disabled)').forEach(cb => cb.checked = true);
+            updateSelectedCount();
+        });
+
+        selectNoneBtn.addEventListener('click', () => {
+            document.querySelectorAll('.newsletter-checkbox').forEach(cb => cb.checked = false);
+            updateSelectedCount();
+        });
+
+        checkboxAll.addEventListener('change', (e) => {
+            document.querySelectorAll('.newsletter-checkbox:not(:disabled)').forEach(cb => cb.checked = e.target.checked);
+            updateSelectedCount();
+        });
+
+        // Event Delegation fuer Checkboxen
+        newslettersBody.addEventListener('change', (e) => {
+            if (e.target.classList.contains('newsletter-checkbox')) {
+                updateSelectedCount();
+            }
+        });
+
+        function updateSelectedCount() {
+            const checked = document.querySelectorAll('.newsletter-checkbox:checked').length;
+            selectedCount.textContent = `${checked} ausgewaehlt`;
+            unsubscribeBtn.disabled = checked === 0;
+        }
+
+        // Abmelden
+        unsubscribeBtn.addEventListener('click', async () => {
+            const selectedIds = Array.from(document.querySelectorAll('.newsletter-checkbox:checked'))
+                .map(cb => cb.dataset.id);
+
+            if (selectedIds.length === 0) return;
+
+            unsubscribeSection.classList.remove('hidden');
+            unsubscribeBtn.disabled = true;
+            unsubscribeResults.innerHTML = '';
+            unsubscribeProgressFill.style.width = '0%';
+
+            try {
+                await fetch('/api/unsubscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: selectedIds })
+                });
+                pollUnsubscribeStatus();
+            } catch (error) {
+                unsubscribeMessage.textContent = 'Fehler beim Starten';
+            }
+        });
+
+        // Abmelde-Status abfragen
+        async function pollUnsubscribeStatus() {
+            try {
+                const response = await fetch('/api/unsubscribe/status');
+                const status = await response.json();
+
+                const progress = status.total > 0 ? (status.current / status.total * 100) : 0;
+                unsubscribeProgressFill.style.width = progress + '%';
+                unsubscribeMessage.textContent = `${status.current} von ${status.total} verarbeitet`;
+
+                // Ergebnisse aktualisieren
+                unsubscribeResults.innerHTML = status.results.map(r => {
+                    const icon = r.status === 'success' ? 'check' : (r.status === 'needs_confirmation' ? 'link' : 'x');
+                    const className = r.status === 'success' ? 'result-success' : (r.status === 'needs_confirmation' ? 'result-warning' : 'result-error');
+                    return `<div class="result-item ${className}">
+                        <span class="result-icon">${icon === 'check' ? '&#10003;' : (icon === 'link' ? '&#128279;' : '&#10005;')}</span>
+                        <span class="result-sender">${truncate(r.newsletter, 25)}</span>
+                        <span class="result-message">${r.message}</span>
+                    </div>`;
+                }).join('');
+
+                if (status.running) {
+                    setTimeout(pollUnsubscribeStatus, 500);
+                } else {
+                    unsubscribeBtn.disabled = false;
+                    // Newsletter neu laden
+                    const nlResponse = await fetch('/api/newsletters');
+                    newsletters = await nlResponse.json();
+                    renderNewsletters();
+                }
+            } catch (error) {
+                unsubscribeBtn.disabled = false;
+            }
+        }
+
+        // Hilfsfunktionen
+        function showMessage(element, message, type) {
+            element.textContent = message;
+            element.className = `message ${type}`;
+            element.classList.remove('hidden');
+            setTimeout(() => element.classList.add('hidden'), 5000);
+        }
+
+        function truncate(str, length) {
+            if (!str) return '';
+            return str.length > length ? str.substring(0, length) + '...' : str;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            try {
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+            } catch {
+                return dateStr.substring(0, 10);
+            }
+        }
+    </script>
+</body>
+</html>

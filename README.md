@@ -1,0 +1,84 @@
+# iCloud Newsletter Abmelde-Bot
+
+Ein Python-basierter Bot mit Web-Interface, der sich bei iCloud Mail einloggt, Newsletter in Posteingang und Spam identifiziert und automatisch abmeldet.
+
+## Features
+
+- Web-Interface zur einfachen Bedienung
+- Automatische Newsletter-Erkennung via `List-Unsubscribe` Header
+- Scan von Posteingang und Spam-Ordner
+- Einzelne oder mehrere Newsletter gleichzeitig abmelden
+- Speicherung bereits verarbeiteter Newsletter
+- Verschlüsselte Passwort-Speicherung
+- Modernes, responsives Dark-Theme
+
+## Voraussetzungen
+
+- Python 3.8+
+- iCloud E-Mail-Account
+- App-spezifisches Passwort (nicht das normale iCloud-Passwort!)
+
+## Installation
+
+1. Repository klonen:
+```bash
+git clone git@github.com:iotstackcloud/newslettermailbot.git
+cd newslettermailbot
+```
+
+2. Abhängigkeiten installieren:
+```bash
+pip install -r requirements.txt
+```
+
+3. App-spezifisches Passwort erstellen:
+   - Gehe zu https://appleid.apple.com
+   - Anmelden → Sicherheit → App-spezifische Passwörter
+   - Neues Passwort generieren
+
+## Verwendung
+
+1. Bot starten:
+```bash
+python app.py
+```
+
+2. Browser öffnen: http://localhost:5000
+
+3. E-Mail und App-Passwort eingeben
+
+4. "Verbindung testen" klicken
+
+5. "Newsletter suchen" klicken
+
+6. Newsletter auswählen und abmelden
+
+## Projektstruktur
+
+```
+newslettermailbot/
+├── app.py              # Flask Web-App
+├── mailbot.py          # E-Mail-Logik (IMAP, Newsletter-Erkennung)
+├── requirements.txt    # Python-Abhängigkeiten
+├── templates/
+│   └── index.html      # Web-Interface
+├── static/
+│   └── style.css       # Styling
+└── .gitignore
+```
+
+## Sicherheit
+
+- Das App-Passwort wird lokal verschlüsselt gespeichert
+- `config.json` und `.key` sind in `.gitignore` enthalten
+- Der Server läuft nur auf localhost (127.0.0.1)
+
+## Hinweise
+
+- Der Bot kann nur Newsletter abmelden, die den `List-Unsubscribe` Header haben
+- Manche Abmeldungen erfordern zusätzliche manuelle Bestätigung auf der Website
+- Bei "Manuelle Bestätigung erforderlich" wird der Link zur Abmeldeseite angezeigt
+
+## Lizenz
+
+MIT License
