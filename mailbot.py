@@ -161,7 +161,7 @@ class MailBot:
                 folder_names.append(name)
         return folder_names
 
-    def scan_folder(self, folder_name, limit=100):
+    def scan_folder(self, folder_name, limit=None):
         """Scannt einen Ordner nach Newslettern."""
         newsletters = []
 
@@ -175,8 +175,10 @@ class MailBot:
             _, message_numbers = self.connection.search(None, "ALL")
             message_ids = message_numbers[0].split()
 
-            # Letzte X Nachrichten (neueste zuerst)
-            message_ids = message_ids[-limit:][::-1]
+            # Neueste zuerst, optional limitiert
+            message_ids = message_ids[::-1]
+            if limit:
+                message_ids = message_ids[:limit]
 
             for num in message_ids:
                 try:
@@ -232,7 +234,7 @@ class MailBot:
 
         return links
 
-    def scan_all(self, limit_per_folder=100):
+    def scan_all(self, limit_per_folder=None):
         """Scannt Posteingang und Spam nach Newslettern."""
         all_newsletters = []
 

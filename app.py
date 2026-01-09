@@ -91,9 +91,9 @@ def start_scan():
                 return
 
             scan_status["progress"] = 20
-            scan_status["message"] = "Scanne Posteingang und Spam..."
+            scan_status["message"] = "Scanne Posteingang und Spam (alle E-Mails)..."
 
-            newsletters = bot.scan_all(limit_per_folder=200)
+            newsletters = bot.scan_all()
 
             scan_status["progress"] = 90
             scan_status["message"] = f"{len(newsletters)} Newsletter gefunden"
