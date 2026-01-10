@@ -10,6 +10,7 @@ Ein Python-basierter Bot mit Web-Interface, der sich bei iCloud Mail einloggt, N
 - Konfigurierbares Scan-Limit (alle E-Mails oder nur die neuesten X)
 - Einzelne oder mehrere Newsletter gleichzeitig abmelden
 - **Automatische Bestätigung** von Unsubscribe-Seiten (klickt Bestätigungsbuttons automatisch)
+- Optionales Löschen der E-Mails nach erfolgreicher Abmeldung
 - Speicherung bereits verarbeiteter Newsletter
 - Verschlüsselte Passwort-Speicherung
 - Modernes, responsives Dark-Theme

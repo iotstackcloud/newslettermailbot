@@ -201,6 +201,7 @@ class MailBot:
 
                             if list_unsubscribe:
                                 msg_id = generate_message_id(msg)
+                                original_message_id = msg.get("Message-ID", "")
                                 from_header = decode_mime_header(msg.get("From", ""))
                                 subject = decode_mime_header(msg.get("Subject", ""))
                                 date_str = msg.get("Date", "")
@@ -210,6 +211,7 @@ class MailBot:
 
                                 newsletter = {
                                     "id": msg_id,
+                                    "message_id": original_message_id,
                                     "from": from_header,
                                     "from_email": extract_email_address(from_header),
                                     "subject": subject,
@@ -509,6 +511,53 @@ class MailBot:
         save_processed(self.processed)
 
         return results
+
+    def delete_email(self, newsletter):
+        """Löscht eine E-Mail aus dem Postfach.
+
+        Args:
+            newsletter: Newsletter-Daten mit message_id und folder
+
+        Returns:
+            (success, message) Tuple
+        """
+        message_id = newsletter.get("message_id")
+        folder = newsletter.get("folder")
+
+        if not message_id:
+            return False, "Keine Message-ID vorhanden"
+
+        if not self.connection:
+            success, msg = self.connect()
+            if not success:
+                return False, f"Verbindungsfehler: {msg}"
+
+        try:
+            # Ordner auswählen
+            status, _ = self.connection.select(folder)
+            if status != "OK":
+                return False, f"Ordner '{folder}' nicht gefunden"
+
+            # Nach der Message-ID suchen
+            # Message-ID muss in Anführungszeichen für IMAP-Suche
+            search_id = message_id.strip("<>")
+            _, message_numbers = self.connection.search(None, f'HEADER Message-ID "<{search_id}>"')
+
+            if not message_numbers[0]:
+                return False, "E-Mail nicht gefunden"
+
+            # Alle gefundenen Nachrichten löschen (sollte nur eine sein)
+            for num in message_numbers[0].split():
+                # Als gelöscht markieren
+                self.connection.store(num, '+FLAGS', '\\Deleted')
+
+            # Gelöschte Nachrichten endgültig entfernen
+            self.connection.expunge()
+
+            return True, "E-Mail gelöscht"
+
+        except Exception as e:
+            return False, f"Löschfehler: {str(e)}"
 
     def test_connection(self):
         """Testet die Verbindung zum IMAP-Server."""

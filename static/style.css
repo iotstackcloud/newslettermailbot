@@ -307,6 +307,28 @@ tr.unsubscribed {
     color: #4caf50;
 }
 
+.unsubscribe-options {
+    margin-bottom: 16px;
+    padding: 12px;
+    background: rgba(255, 74, 74, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 74, 74, 0.2);
+}
+
+.checkbox-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    color: #e0e0e0;
+}
+
+.checkbox-option input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #ff4a4a;
+}
+
 .results-list {
     margin-top: 20px;
     max-height: 300px;

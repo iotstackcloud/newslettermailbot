@@ -151,6 +151,7 @@ def unsubscribe():
 
     data = request.json
     newsletter_ids = data.get("ids", [])
+    delete_emails = data.get("delete_emails", False)
 
     if not newsletter_ids:
         return jsonify({"success": False, "message": "Keine Newsletter ausgewählt"})
@@ -160,7 +161,7 @@ def unsubscribe():
         if nl["id"] in newsletter_ids
     ]
 
-    def do_unsubscribe():
+    def do_unsubscribe(should_delete):
         global bot, unsubscribe_status
         unsubscribe_status["running"] = True
         unsubscribe_status["current"] = 0
@@ -182,6 +183,15 @@ def unsubscribe():
                     if any(r["status"] == "success" for r in results):
                         status = "success"
                         message = "Erfolgreich abgemeldet"
+
+                        # E-Mail löschen wenn Option aktiviert
+                        if should_delete:
+                            del_success, del_msg = bot.delete_email(nl)
+                            if del_success:
+                                message += " + E-Mail geloescht"
+                            else:
+                                message += f" (Loeschen fehlgeschlagen: {del_msg})"
+
                     elif any(r["status"] == "needs_confirmation" for r in results):
                         status = "needs_confirmation"
                         message = "Manuelle Bestätigung erforderlich"
@@ -199,6 +209,9 @@ def unsubscribe():
                     "message": message
                 })
 
+            # Verbindung trennen
+            bot.disconnect()
+
         except Exception as e:
             unsubscribe_status["results"].append({
                 "newsletter": "System",
@@ -208,7 +221,7 @@ def unsubscribe():
         finally:
             unsubscribe_status["running"] = False
 
-    thread = threading.Thread(target=do_unsubscribe)
+    thread = threading.Thread(target=do_unsubscribe, args=(delete_emails,))
     thread.start()
 
     return jsonify({"success": True, "message": "Abmeldung gestartet"})
