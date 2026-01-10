@@ -7,7 +7,9 @@ Ein Python-basierter Bot mit Web-Interface, der sich bei iCloud Mail einloggt, N
 - Web-Interface zur einfachen Bedienung
 - Automatische Newsletter-Erkennung via `List-Unsubscribe` Header
 - Scan von Posteingang und Spam-Ordner
+- Konfigurierbares Scan-Limit (alle E-Mails oder nur die neuesten X)
 - Einzelne oder mehrere Newsletter gleichzeitig abmelden
+- **Automatische Bestätigung** von Unsubscribe-Seiten (klickt Bestätigungsbuttons automatisch)
 - Speicherung bereits verarbeiteter Newsletter
 - Verschlüsselte Passwort-Speicherung
 - Modernes, responsives Dark-Theme
@@ -31,7 +33,12 @@ cd newslettermailbot
 pip install -r requirements.txt
 ```
 
-3. App-spezifisches Passwort erstellen:
+3. Playwright für automatische Bestätigung installieren (optional, aber empfohlen):
+```bash
+python -m playwright install chromium
+```
+
+4. App-spezifisches Passwort erstellen:
    - Gehe zu https://appleid.apple.com
    - Anmelden → Sicherheit → App-spezifische Passwörter
    - Neues Passwort generieren
@@ -76,8 +83,9 @@ newslettermailbot/
 ## Hinweise
 
 - Der Bot kann nur Newsletter abmelden, die den `List-Unsubscribe` Header haben
-- Manche Abmeldungen erfordern zusätzliche manuelle Bestätigung auf der Website
-- Bei "Manuelle Bestätigung erforderlich" wird der Link zur Abmeldeseite angezeigt
+- Mit Playwright werden Bestätigungsbuttons auf Unsubscribe-Seiten automatisch geklickt
+- Falls die automatische Bestätigung fehlschlägt (z.B. bei CAPTCHA), wird der Link zur manuellen Abmeldung angezeigt
+- Ohne Playwright wird bei Bestätigungsseiten nur der Link angezeigt
 
 ## Lizenz
 

@@ -10,6 +10,14 @@ from datetime import datetime
 from cryptography.fernet import Fernet
 import base64
 import hashlib
+import time
+
+# Playwright ist optional - wird nur für automatische Bestätigung benötigt
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
 
 CONFIG_FILE = "config.json"
 PROCESSED_FILE = "processed.json"
@@ -234,6 +242,131 @@ class MailBot:
 
         return links
 
+    def _auto_confirm_unsubscribe(self, url):
+        """
+        Verwendet Playwright um automatisch Bestätigungsbuttons auf Unsubscribe-Seiten zu klicken.
+        Gibt (success, message) zurück.
+        """
+        if not PLAYWRIGHT_AVAILABLE:
+            return False, "Playwright nicht installiert - führe 'pip install playwright && playwright install chromium' aus"
+
+        # Typische Button/Link-Texte für Unsubscribe-Bestätigung (mehrsprachig)
+        confirm_patterns = [
+            # Deutsch
+            r"abmelden", r"abbestellen", r"austragen", r"bestätigen", r"ja.*abmelden",
+            r"newsletter.*abmelden", r"abmeldung.*bestätigen",
+            # Englisch
+            r"unsubscribe", r"confirm", r"yes.*unsubscribe", r"opt.?out", r"remove",
+            r"stop.*emails?", r"cancel.*subscription",
+            # Französisch
+            r"désabonner", r"se désinscrire",
+            # Spanisch
+            r"cancelar.*suscripci", r"darse de baja",
+        ]
+
+        # Kombiniertes Pattern
+        button_pattern = re.compile("|".join(confirm_patterns), re.IGNORECASE)
+
+        try:
+            with sync_playwright() as p:
+                # Headless Browser starten
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+                page = context.new_page()
+
+                # Seite laden
+                page.goto(url, timeout=15000, wait_until="domcontentloaded")
+                time.sleep(1)  # Kurz warten für JavaScript
+
+                # Prüfen ob bereits abgemeldet (Erfolgsmeldung auf der Seite)
+                page_text = page.content().lower()
+                success_indicators = [
+                    "erfolgreich abgemeldet", "successfully unsubscribed",
+                    "have been unsubscribed", "wurden abgemeldet",
+                    "you are now unsubscribed", "abmeldung erfolgreich",
+                    "subscription cancelled", "removed from", "opted out"
+                ]
+
+                for indicator in success_indicators:
+                    if indicator in page_text:
+                        browser.close()
+                        return True, "Bereits abgemeldet (Erfolgsmeldung gefunden)"
+
+                # Nach Bestätigungs-Buttons suchen
+                clicked = False
+
+                # Strategie 1: Buttons mit passendem Text
+                buttons = page.locator("button, input[type='submit'], input[type='button']")
+                count = buttons.count()
+
+                for i in range(count):
+                    try:
+                        btn = buttons.nth(i)
+                        btn_text = btn.inner_text() or btn.get_attribute("value") or ""
+                        if button_pattern.search(btn_text):
+                            btn.click(timeout=5000)
+                            clicked = True
+                            time.sleep(2)
+                            break
+                    except:
+                        continue
+
+                # Strategie 2: Links mit passendem Text
+                if not clicked:
+                    links = page.locator("a")
+                    count = links.count()
+
+                    for i in range(count):
+                        try:
+                            link = links.nth(i)
+                            link_text = link.inner_text() or ""
+                            if button_pattern.search(link_text):
+                                link.click(timeout=5000)
+                                clicked = True
+                                time.sleep(2)
+                                break
+                        except:
+                            continue
+
+                # Strategie 3: Formulare submitten
+                if not clicked:
+                    forms = page.locator("form")
+                    if forms.count() > 0:
+                        # Erstes Formular mit Submit-Button finden
+                        for i in range(forms.count()):
+                            try:
+                                form = forms.nth(i)
+                                submit_btn = form.locator("button[type='submit'], input[type='submit']").first
+                                if submit_btn.count() > 0:
+                                    submit_btn.click(timeout=5000)
+                                    clicked = True
+                                    time.sleep(2)
+                                    break
+                            except:
+                                continue
+
+                # Nach dem Klick: Prüfen ob Erfolgsmeldung erscheint
+                if clicked:
+                    time.sleep(2)
+                    page_text = page.content().lower()
+
+                    for indicator in success_indicators:
+                        if indicator in page_text:
+                            browser.close()
+                            return True, "Erfolgreich abgemeldet (automatisch bestätigt)"
+
+                    # Auch ohne explizite Erfolgsmeldung als Erfolg werten
+                    browser.close()
+                    return True, "Bestätigung geklickt - wahrscheinlich abgemeldet"
+
+                browser.close()
+                return False, "Kein Bestätigungsbutton gefunden"
+
+        except Exception as e:
+            return False, f"Browser-Fehler: {str(e)}"
+
     def scan_all(self, limit_per_folder=None):
         """Scannt Posteingang und Spam nach Newslettern."""
         all_newsletters = []
@@ -257,8 +390,13 @@ class MailBot:
 
         return unique_newsletters
 
-    def unsubscribe(self, newsletter):
-        """Versucht, sich von einem Newsletter abzumelden."""
+    def unsubscribe(self, newsletter, auto_confirm=True):
+        """Versucht, sich von einem Newsletter abzumelden.
+
+        Args:
+            newsletter: Newsletter-Daten mit unsubscribe_links
+            auto_confirm: Wenn True, wird versucht Bestätigungsseiten automatisch zu bestätigen
+        """
         results = []
 
         http_links = newsletter.get("unsubscribe_links", {}).get("http", [])
@@ -278,15 +416,56 @@ class MailBot:
                 if response.status_code == 200:
                     # Prüfen ob Bestätigung nötig
                     soup = BeautifulSoup(response.text, "html.parser")
+                    page_text = response.text.lower()
+
+                    # Prüfen ob bereits abgemeldet
+                    success_indicators = [
+                        "erfolgreich abgemeldet", "successfully unsubscribed",
+                        "have been unsubscribed", "wurden abgemeldet",
+                        "you are now unsubscribed", "abmeldung erfolgreich",
+                        "subscription cancelled", "removed from", "opted out"
+                    ]
+
+                    already_unsubscribed = any(ind in page_text for ind in success_indicators)
+
+                    if already_unsubscribed:
+                        results.append({
+                            "link": link,
+                            "status": "success",
+                            "message": "Erfolgreich abgemeldet"
+                        })
+                        continue
 
                     # Nach Bestätigungs-Buttons/Forms suchen
                     forms = soup.find_all("form")
                     confirm_buttons = soup.find_all(
                         ["button", "input"],
-                        text=re.compile(r"(confirm|unsubscribe|abmelden|bestätigen)", re.I)
+                        attrs={"type": ["submit", "button"]}
+                    )
+                    confirm_links = soup.find_all(
+                        "a",
+                        text=re.compile(r"(confirm|unsubscribe|abmelden|bestätigen|yes)", re.I)
                     )
 
-                    if forms or confirm_buttons:
+                    needs_confirmation = bool(forms or confirm_buttons or confirm_links)
+
+                    if needs_confirmation and auto_confirm:
+                        # Automatische Bestätigung versuchen
+                        success, message = self._auto_confirm_unsubscribe(link)
+
+                        if success:
+                            results.append({
+                                "link": link,
+                                "status": "success",
+                                "message": message
+                            })
+                        else:
+                            results.append({
+                                "link": link,
+                                "status": "needs_confirmation",
+                                "message": f"Automatische Bestätigung fehlgeschlagen: {message}"
+                            })
+                    elif needs_confirmation:
                         results.append({
                             "link": link,
                             "status": "needs_confirmation",

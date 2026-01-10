@@ -74,7 +74,11 @@ def start_scan():
     if scan_status["scanning"]:
         return jsonify({"success": False, "message": "Scan läuft bereits"})
 
-    def do_scan():
+    # Limit aus Request holen
+    data = request.get_json() or {}
+    limit = data.get("limit")
+
+    def do_scan(limit_per_folder):
         global bot, scan_status
         scan_status["scanning"] = True
         scan_status["progress"] = 0
@@ -91,9 +95,12 @@ def start_scan():
                 return
 
             scan_status["progress"] = 20
-            scan_status["message"] = "Scanne Posteingang und Spam (alle E-Mails)..."
+            if limit_per_folder:
+                scan_status["message"] = f"Scanne Posteingang und Spam ({limit_per_folder} E-Mails pro Ordner)..."
+            else:
+                scan_status["message"] = "Scanne Posteingang und Spam (alle E-Mails)..."
 
-            newsletters = bot.scan_all()
+            newsletters = bot.scan_all(limit_per_folder=limit_per_folder)
 
             scan_status["progress"] = 90
             scan_status["message"] = f"{len(newsletters)} Newsletter gefunden"
@@ -108,7 +115,7 @@ def start_scan():
             scan_status["message"] = f"Fehler: {str(e)}"
             scan_status["scanning"] = False
 
-    thread = threading.Thread(target=do_scan)
+    thread = threading.Thread(target=do_scan, args=(limit,))
     thread.start()
 
     return jsonify({"success": True, "message": "Scan gestartet"})

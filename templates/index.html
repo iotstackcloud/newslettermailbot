@@ -46,6 +46,11 @@
         <!-- Newsletter Scanner -->
         <section class="card" id="scanner-section">
             <h2>Newsletter Scanner</h2>
+            <div class="form-group scan-options">
+                <label for="scan-limit">Anzahl E-Mails pro Ordner:</label>
+                <input type="number" id="scan-limit" min="0" value="0" placeholder="0 = alle">
+                <small>0 = alle E-Mails scannen</small>
+            </div>
             <div class="button-group">
                 <button class="btn btn-primary" id="start-scan">Newsletter suchen</button>
             </div>
@@ -183,8 +188,14 @@
             scanProgress.classList.remove('hidden');
             newslettersSection.classList.add('hidden');
 
+            const scanLimit = parseInt(document.getElementById('scan-limit').value) || 0;
+
             try {
-                await fetch('/api/scan', { method: 'POST' });
+                await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ limit: scanLimit > 0 ? scanLimit : null })
+                });
                 pollScanStatus();
             } catch (error) {
                 scanMessage.textContent = 'Fehler beim Starten';

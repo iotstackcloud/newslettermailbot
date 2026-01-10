@@ -165,6 +165,27 @@ header h1 {
     display: none !important;
 }
 
+.scan-options {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.scan-options label {
+    margin-bottom: 0;
+    white-space: nowrap;
+}
+
+.scan-options input {
+    width: 120px;
+}
+
+.scan-options small {
+    margin-top: 0;
+    color: #888;
+}
+
 .progress-container {
     margin-top: 20px;
 }
